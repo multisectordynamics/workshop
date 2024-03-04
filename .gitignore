@@ -1,3 +1,15 @@
+# pyenv
+.python-version
+
+# data
+*.duckdb
+
+# keys
+*.pem
+
+# archive or hidden files
+_*.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
