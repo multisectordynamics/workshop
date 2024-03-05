@@ -17,32 +17,54 @@ MAX_REVIEWS_PER_DOCUMENT = 3
 MAX_REVIEWS_PER_REVIEWER = 15
 
 
-def create_db_connection():
+def create_db_connection() -> duckdb.DuckDBPyConnection:
+    """
+    Create and return a connection to the DuckDB database.
+
+    Constructs the path to the DuckDB database file located in the 'data' directory
+    within the current working directory and establishes a connection to it.
+
+    :return: A connection object to the DuckDB database.
+    :rtype: duckdb.DuckDBPyConnection
+    """
     dat_file = os.path.join(os.getcwd(), "data", "data.duckdb")
     return duckdb.connect(dat_file)
 
 
-def reset_session(coi_reset=True):
+def reset_session(coi_reset: bool = True) -> None:
     """
-    This function resets the session state variables to their default values.
-    It is used to prepare the environment for a new review session.
+    Reset the session state variables to their default values.
+
+    This function is used to prepare the environment for a new review session
+    by resetting various session state variables related to the review process.
+
+    :param coi_reset: A boolean flag to determine whether to reset the conflict
+                      of interest completion status. Defaults to True.
     """
     # Set the completion status of the review to False
     st.session_state.complete = False
+
     # Set the acceptance status of the review to False
     st.session_state.accept = False
+
     # Set the required number of reviews to the maximum reviews per reviewer
     st.session_state.required_reviews = st.session_state.max_reviews_per_reviewer
+
     # Initialize the conflict of interest status to "Select Option"
     st.session_state.conflict = "Select Option"
+
     # Initialize the career level score to an empty string
     st.session_state.career = ""
+
     # Initialize the workshop alignment score to an empty string
     st.session_state.alignment = ""
+
     # Initialize the advancing MSD science score to an empty string
     st.session_state.science = ""
+
     # Initialize the benefits score to an empty string
     st.session_state.benefits = ""
+    
     # Initialize the comments to an empty string
     st.session_state.comments = ""
 
@@ -54,41 +76,45 @@ def reset_session(coi_reset=True):
         st.session_state.coi_complete = False
 
 
-def clear_criteria():
+def clear_criteria() -> None:
+    """
+    Clear the review criteria from the session state and update the database.
 
+    This function either updates an existing record in the `tbl_response` table if
+    `st.session_state.redo` is True, or inserts a new record otherwise. It then
+    resets the review criteria in the session state and increments the screening order.
+
+    :raises: Exception if the SQL execution or commit fails.
+    """
     if st.session_state.redo:
         sql = f"""
         UPDATE
             tbl_response
         SET 
-            alignment = {st.session_state.alignment}
-            ,science = {st.session_state.science}
-            ,benefits = {st.session_state.benefits}
-            ,comments = '{st.session_state.comments}'
+            alignment = {st.session_state.alignment},
+            science = {st.session_state.science},
+            benefits = {st.session_state.benefits},
+            comments = '{st.session_state.comments}'
         WHERE 
             document_id = {st.session_state.document_id}
             AND reviewer_id = {st.session_state.reviewer_id}
         """
-
     else:
-
         sql = f"""
         INSERT INTO tbl_response(
-            reviewer_id 
-            ,reviewer_name
-            ,document_id
-            --,career
-            ,alignment
-            ,science
-            ,benefits
-            ,comments
-            ,screening_order
+            reviewer_id,
+            reviewer_name,
+            document_id,
+            alignment,
+            science,
+            benefits,
+            comments,
+            screening_order
         ) 
         VALUES (
             {st.session_state.reviewer_id}, 
             '{st.session_state.reviewer_name}',
-            {st.session_state.document_id}, 
-            --{st.session_state.career},
+            {st.session_state.document_id},
             {st.session_state.alignment},
             {st.session_state.science},
             {st.session_state.benefits},
@@ -100,8 +126,8 @@ def clear_criteria():
     st.session_state.cursor.sql(sql)
     st.session_state.cursor.commit()
 
+    # Reset session state variables related to review criteria
     st.session_state.accept = False
-
     st.session_state.conflict = "Select Option"
     st.session_state.career = ""
     st.session_state.alignment = ""
@@ -111,27 +137,37 @@ def clear_criteria():
     st.session_state.comments_submit_button = False
     st.session_state.screening_order += 1
 
+    # Scroll to the top of the page
     js = '''
     <script>
         var body = window.parent.document.querySelector(".main");
-        //console.log(body);
         body.scrollTop = 0;
     </script>
     '''
-
     st.components.v1.html(js)
 
-    st.components.v1.html(js)
-
-    # set back to false if record edit in progress
+    # Update state to reflect that the record edit is no longer in progress
     st.session_state.redo = False
 
-    # set active review to false
+    # Set active review to false
     st.session_state.active = False
 
 
-def plot_progress_data():
+def plot_progress_data() -> plt.Figure:
+    """
+    Generates a bar plot visualizing the progress of reviewers.
 
+    This function queries the database to calculate the fraction of reviews completed by each reviewer and generates a bar plot showing this progress. The plot has two bars for each reviewer: one showing the total number of reviews and another showing the fraction of reviews completed.
+
+    The SQL query calculates the fraction by counting the number of reviews per reviewer, subtracting one to account for the initial state, and then dividing by the maximum number of reviews allowed per reviewer. The result is rounded to two decimal places.
+
+    :return: A figure object containing the generated bar plot.
+    :rtype: matplotlib.figure.Figure
+
+    :uses:
+        - st.session_state.cursor: A cursor object to execute SQL queries on the database.
+        - st.session_state.max_reviews_per_reviewer: A session state variable indicating the maximum number of reviews allowed per reviewer.
+    """
     sql = f"""
     SELECT 
         reviewer_name
@@ -161,7 +197,7 @@ def plot_progress_data():
                 label="Total", 
                 color="b")
 
-    # Plot the crashes where alcohol was involved
+    # Plot the fraction of reviews completed
     sns.set_color_codes("muted")
     sns.barplot(x="fraction_complete", 
                 y="reviewer_name", 
@@ -179,8 +215,20 @@ def plot_progress_data():
     return fig
 
 
-def generate_selection():
+def generate_selection() -> pd.DataFrame:
+    """
+    Generates a random selection of document data from the source table, excluding documents with conflicts of interest,
+    documents already reviewed by the user, and documents that have reached the maximum number of reviews.
 
+    This function constructs and executes an SQL query to retrieve a single random record from the `tbl_source` table.
+    The selection is subject to the following conditions:
+    - The document must not have a recorded conflict of interest for the current reviewer.
+    - The document must not have been previously inventoried by the current reviewer.
+    - The document must not have reached the maximum number of reviews allowed.
+    - The current reviewer must not have completed the required number of reviews.
+
+    :return: A DataFrame containing the selected document data.
+    """
     sql = f"""
     SELECT
         CONCAT(first_name, ' ', last_name) as authors
@@ -195,22 +243,18 @@ def generate_selection():
         ,document_id 
     FROM 
         tbl_source 
-    -- ensure we do not draw any records for which a conflict of interest was stated
     WHERE document_id NOT IN (
         SELECT document_id FROM tbl_log WHERE reviewer_id = {st.session_state.reviewer_id} AND conflict = 'YES'
     )
-    -- no draws from records already inventoried by the reviewer
     AND document_id NOT IN (
         SELECT document_id FROM tbl_response WHERE reviewer_id = {st.session_state.reviewer_id}
     )
-    -- no draws from records already having the maximum number of reviews
     AND document_id NOT IN (
         SELECT document_id
         FROM tbl_response
         GROUP BY document_id
         HAVING COUNT(document_id) >= {st.session_state.max_reviews_per_document}
     )
-    -- no draws after the number of required reviews has been met
     AND (
         SELECT COUNT(reviewer_id) FROM tbl_response WHERE reviewer_id = {st.session_state.reviewer_id}
     ) < {st.session_state.required_reviews}
@@ -221,14 +265,25 @@ def generate_selection():
     return st.session_state.cursor.sql(sql).df()
 
 
-def coi_review_selection():
+def coi_review_selection() -> pd.DataFrame:
+    """
+    Selects a random document for conflict of interest (COI) review.
 
+    This function queries the `tbl_source` table to find a random document that has not been
+    previously logged by the current reviewer in the `tbl_log` table. It constructs and executes
+    an SQL query to retrieve this information. If a document is found, it updates the session state
+    with the document's details; if no document is found, it marks the COI review as complete and
+    resets the session.
+
+    :return: A DataFrame containing the selected document's ID, author, affiliation, and coauthors.
+             If no document is found, the DataFrame will be empty.
+    """
     sql = f"""
     SELECT 
         document_id
         ,CONCAT(first_name, ' ', last_name) as author
         ,institution as affiliation
-        ,CASE WHEN authors IS NULL THEN 'NA' ELSE authors  END as coauthors
+        ,CASE WHEN authors IS NULL THEN 'NA' ELSE authors END as coauthors
     FROM tbl_source
     WHERE document_id NOT IN (
         SELECT document_id FROM tbl_log WHERE reviewer_id = {st.session_state.reviewer_id} 
@@ -243,7 +298,6 @@ def coi_review_selection():
         st.session_state.coi_complete = True
         reset_session(coi_reset=False)
     else:
-
         try:
             st.session_state.authors = selection["author"].values[0].replace(";", ",").replace("\n", ". ")
             st.session_state.affiliation = selection["affiliation"].values[0].replace(";", ",").replace("\n", ". ")
@@ -256,8 +310,16 @@ def coi_review_selection():
     return selection
 
 
-def coi():
+def coi() -> None:
+    """
+    Logs the conflict of interest (COI) decision for the current document and reviewer.
 
+    This function inserts a new record into the `tbl_log` table with the reviewer's ID,
+    the document's ID, and the COI decision. After logging the COI, it resets the COI
+    decision in the session state to prompt the user for a new selection.
+
+    :raises: Raises an exception if the SQL execution fails.
+    """
     # update database
     sql = f"""
     INSERT INTO tbl_log (reviewer_id, document_id, conflict) 
@@ -270,8 +332,17 @@ def coi():
     st.session_state.conflict = "Select Option"
 
 
-def clearance():
+def clearance() -> None:
+    """
+    Validates the user's password against an environment variable and updates the session state.
 
+    This function checks if the user's password (`userpw`) matches the password stored in the
+    environment variable `WORKSHOP_LEVEL_1`. If the passwords match, it grants permission by
+    setting `permit` to True in the session state. If the passwords do not match and a password
+    attempt has been made (`userpw` is not an empty string), it displays a warning message.
+
+    :raises: This function does not raise any exceptions.
+    """
     if st.session_state.userpw == os.getenv("WORKSHOP_LEVEL_1"):
         st.session_state.permit = True 
 
@@ -279,36 +350,92 @@ def clearance():
         st.warning("Incorrect password.  Try again.")
 
 
-def clean_slate():
+def clean_slate() -> None:
+    """
+    Reset the database by truncating the `tbl_response` and `tbl_log` tables.
 
+    This function executes SQL commands to truncate the `tbl_response` and `tbl_log` tables,
+    effectively removing all data from them. It then commits the changes to the database.
+    After truncating the tables, it notifies the user that the database has been reset.
+
+    :raises: This function does not explicitly raise exceptions but SQL execution errors
+             could potentially raise an exception.
+    """
     st.session_state.cursor.sql("truncate tbl_response;")
     st.session_state.cursor.sql("truncate tbl_log;")
     st.session_state.cursor.commit()
     st.success("Database has been reset.")
 
 
-def get_nrecords():
+def get_nrecords() -> int:
+    """
+    Retrieve the number of records from the 'tbl_source' table.
+
+    This function executes an SQL query to count the number of records in the 'tbl_source' table
+    and returns the count.
+
+    :return: The count of records in the 'tbl_source' table.
+    :rtype: int
+    """
     return st.session_state.cursor.sql("SELECT COUNT(1) as ct FROM tbl_source").df()["ct"].values[0]
 
 
-def get_coi_count():
+def get_coi_count() -> int:
+    """
+    Retrieve the count of conflicts of interest (COI) entries for the current reviewer.
 
+    This function constructs and executes an SQL query to count the number of COI entries
+    in the 'tbl_log' table for the current reviewer, identified by their reviewer ID.
+
+    :return: The count of COI entries for the current reviewer.
+    :rtype: int
+
+    :uses: st.session_state.reviewer_id to filter the query by the current reviewer's ID.
+    :uses: st.session_state.cursor to execute the query and fetch the results.
+    """
     sql = f"SELECT COUNT(1) as ct FROM tbl_log WHERE reviewer_id = {st.session_state.reviewer_id}"
     return st.session_state.cursor.sql(sql).df()["ct"].values[0]
 
 
-def get_record_count():
+def get_record_count() -> int:
+    """
+    Retrieve the count of records for the current reviewer from the 'tbl_response' table.
 
+    This function constructs and executes an SQL query to count the number of records
+    in the 'tbl_response' table for the current reviewer, identified by their reviewer ID.
+
+    :return: The count of records for the current reviewer.
+    :rtype: int
+
+    :uses: st.session_state.reviewer_id to filter the query by the current reviewer's ID.
+    :uses: st.session_state.cursor to execute the query and fetch the results.
+    """
     sql = f"SELECT COUNT(1) as ct FROM tbl_response WHERE reviewer_id = {st.session_state.reviewer_id}"
     return st.session_state.cursor.sql(sql).df()["ct"].values[0]
 
 
-def clear_text():
+def clear_text() -> None:
+    """
+    Clear the text from the comments in the session state and persist the previous comments.
+
+    This function assigns the current comments to `comments_persist` for backup purposes
+    and then resets the `comments` to an empty string.
+
+    :return: None
+    """
     st.session_state.comments_persist = st.session_state.comments
     st.session_state.comments = ""
 
 
-def refresh_user():
+def refresh_user() -> None:
+    """
+    Resets the completion status for the current user and deletes their responses.
+
+    This function sets the `complete` flag in the session state to `False` and
+    deletes all entries from the `tbl_response` table for the current reviewer.
+
+    :raises: Exception if the SQL execution or commit fails.
+    """
     st.session_state.complete = False
 
     sql = f"DELETE FROM tbl_response WHERE reviewer_id = {st.session_state.reviewer_id};"
@@ -317,8 +444,20 @@ def refresh_user():
     st.session_state.cursor.commit()
 
 
-def get_previous_order():
+def get_previous_order() -> int:
+    """
+    Retrieve the maximum screening order number for the current reviewer.
 
+    This function constructs and executes an SQL query to find the highest
+    screening order number from the 'tbl_response' table for the current reviewer,
+    identified by their reviewer ID.
+
+    :return: The maximum screening order number for the current reviewer.
+    :rtype: int
+
+    :uses: st.session_state.reviewer_id to filter the query by the current reviewer's ID.
+    :uses: st.session_state.cursor to execute the query and fetch the results.
+    """
     sql = f"""
     SELECT 
         MAX(screening_order) as mx 
@@ -331,14 +470,22 @@ def get_previous_order():
     return st.session_state.cursor.sql(sql).df()["mx"].values[0]
 
 
-def redo_previous_record():
+def redo_previous_record() -> None:
+    """
+    Retrieves the previous record's data and updates the session state for a redo operation.
 
+    This function sets the completion flag to False, fetches the previous record's screening order number,
+    and retrieves the corresponding record from the database. It then updates the session state with the
+    record's data, sanitizes certain fields by replacing semicolons and newlines, and sets the redo flag to True.
+
+    :raises ValueError: If the response from the database is empty.
+    """
     st.session_state.complete = False
 
-    # get the previous records screening order number
-    order = get_previous_order()
+    # Get the previous record's screening order number
+    order: int = get_previous_order()
 
-    sql = f"""
+    sql: str = f"""
     SELECT 
         a.document_id
         ,a.alignment
@@ -363,7 +510,10 @@ def redo_previous_record():
         AND a.screening_order = {order}
     """
 
-    response = st.session_state.cursor.sql(sql).df()
+    response: pd.DataFrame = st.session_state.cursor.sql(sql).df()
+
+    if response.empty:
+        raise ValueError("No previous record found for redo operation.")
 
     st.session_state.document_id = response["document_id"].values[0]
     st.session_state.alignment = response["alignment"].values[0]
@@ -380,9 +530,8 @@ def redo_previous_record():
 
     st.session_state.comments_redo = st.session_state.comments
 
-    # set to record redo
+    # Set to record redo
     st.session_state.redo = True
-
 
 # set persistent session state variables
 if "session" not in st.session_state:
@@ -511,24 +660,6 @@ with st.sidebar:
         index=0,
         key="mode"
     )
-
-    # st.number_input(
-    #     '**Set the maximum number of reviews allowable per document**:',
-    #     min_value=1,
-    #     max_value=1000,
-    #     value=MAX_REVIEWS_PER_DOCUMENT,
-    #     step=1,
-    #     key="max_reviews_per_document"
-    # )
-
-    # st.number_input(
-    #     '**Set the maximum number of reviews allowable per reviewer**:',
-    #     min_value=1,
-    #     max_value=1000,
-    #     value=MAX_REVIEWS_PER_REVIEWER,
-    #     step=1,
-    #     key="max_reviews_per_reviewer"
-    # )
 
     st.session_state.required_reviews = st.session_state.max_reviews_per_reviewer
 
@@ -669,14 +800,6 @@ if st.session_state.mode == "Reviewer":
 
                 elif st.session_state.complete:
                     reviewer_block.success("Thank you!  You have either hit your max or there are no documents left to review.")
-
-                    # reviewer_block.markdown(
-                    #     """
-                    #     <iframe width="560" height="315" src="https://www.youtube.com/embed/3GwjfUFyY6M?autoplay=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-                    #     """,
-                    #     unsafe_allow_html=True,
-                    # )
-
                     reviewer_block.markdown("##### Want to start over and do the screening again from scratch?")
                     reviewer_block.button(":boom: Erase and Start Over :boom:",  on_click=refresh_user) 
 
@@ -687,23 +810,6 @@ if st.session_state.mode == "Reviewer":
                     criteria_block = st.container()
                     criteria_block.markdown("#### Applicant Review")
                     criteria_block.markdown("Fill out the review criteria for each metric below")
-
-                    # criteria_block.markdown("##### Early Career and/or Student")
-                    # criteria_block.markdown(
-                    #     """
-                    #     **Scoring**:
-                    #     1. Not early career or student
-                    #     2. Early career or student
-                    #     """
-                    # )
-
-                    # criteria_block.selectbox(
-                    #     '**Select score from 1 or 2**:',
-                    #     ("", 1, 2),
-                    #     index=0,
-                    #     key="career"
-                    # )
-
                     criteria_block.markdown("##### Alignment with workshop goals")
                     criteria_block.markdown(
                         """
@@ -785,9 +891,6 @@ if st.session_state.mode == "Reviewer":
 
 
                     if  st.session_state.alignment == "" or st.session_state.science == "" or st.session_state.benefits  == "" or st.session_state.comments == "":
-
-                        # if st.session_state.career == "":
-                        #     st.warning("Please enter a valid score for 'Early Career and/or Student' to continue.")
 
                         if st.session_state.alignment == "":
                             st.warning("Please enter a valid score for 'Alignment with workshop goals' to continue.")
