@@ -7,6 +7,7 @@
 # data
 *.duckdb
 *.parquet
+*duckdb.wal
 
 # keys
 *.pem

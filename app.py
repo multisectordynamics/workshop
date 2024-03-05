@@ -1,6 +1,5 @@
 import io
 import os
-import pkg_resources
 
 import duckdb
 import numpy as np
@@ -273,7 +272,7 @@ def coi():
 
 def clearance():
 
-    if st.session_state.userpw == os.getenv("APP1"):
+    if st.session_state.userpw == os.getenv("WORKSHOP_LEVEL_1"):
         st.session_state.permit = True 
 
     elif st.session_state.permit is False and st.session_state.userpw != "":
@@ -876,7 +875,7 @@ elif st.session_state.mode == "Admin":
             placeholder="*******",
             type="password")
 
-    if pw == os.getenv("APP0"):
+    if pw == os.getenv("WORKSHOP_LEVEL_0"):
         admin_block.markdown("##### All reviewer responses:")
         response_sql = """
         SELECT 
