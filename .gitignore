@@ -1,8 +1,12 @@
+# system files
+.DS_Store
+
 # pyenv
 .python-version
 
 # data
 *.duckdb
+*.parquet
 
 # keys
 *.pem
